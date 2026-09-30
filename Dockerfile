@@ -6,7 +6,7 @@ USER root
 RUN set -eux; \
     if command -v apk >/dev/null 2>&1; then \
         apk add --no-cache \
-            curl git python3 py3-pip \
+            bash curl git openssh-client python3 py3-pip \
             postgresql-client \
             nodejs npm \
             jq yq fd fzf \
@@ -23,7 +23,7 @@ RUN set -eux; \
             > /etc/apt/sources.list.d/nodesource.list; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
-            curl git python3 python3-pip \
+            bash curl git openssh-client python3 python3-pip \
             postgresql-client \
             nodejs \
             jq yq fd-find fzf \
@@ -32,7 +32,7 @@ RUN set -eux; \
         rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
         dnf install -y \
-            curl git python3 python3-pip \
+            bash curl git openssh-clients python3 python3-pip \
             postgresql \
             nodejs npm \
             jq yq fd-find fzf \
@@ -41,7 +41,7 @@ RUN set -eux; \
         dnf clean all; \
     elif command -v microdnf >/dev/null 2>&1; then \
         microdnf install -y \
-            curl git python3 python3-pip \
+            bash curl git openssh-clients python3 python3-pip \
             postgresql \
             nodejs npm \
             jq yq fd-find fzf \
@@ -50,7 +50,7 @@ RUN set -eux; \
         microdnf clean all; \
     elif command -v yum >/dev/null 2>&1; then \
         yum install -y \
-            curl git python3 python3-pip \
+            bash curl git openssh-clients python3 python3-pip \
             postgresql \
             nodejs npm \
             jq yq fd-find fzf \

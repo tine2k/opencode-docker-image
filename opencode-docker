@@ -39,6 +39,28 @@ DOCKER_ARGS=(
 )
 
 # ---------------------------------------------------------------------------
+# SSH credentials
+# ---------------------------------------------------------------------------
+
+SSH_DIR="${HOME}/.ssh"
+
+if [[ -d "$SSH_DIR" ]]; then
+    DOCKER_ARGS+=(
+        -v "${SSH_DIR}:/home/${USER_NAME}/.ssh:ro"
+    )
+else
+    echo "WARNING: SSH directory not found: $SSH_DIR"
+    echo "         Add your GitHub SSH key there to enable SSH pushes."
+fi
+
+if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
+    DOCKER_ARGS+=(
+        -v "${SSH_AUTH_SOCK}:/run/host-ssh-agent"
+        -e "SSH_AUTH_SOCK=/run/host-ssh-agent"
+    )
+fi
+
+# ---------------------------------------------------------------------------
 # Herdr Socket
 # ---------------------------------------------------------------------------
 
