@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=opencode-docker
+
+PROJECT_DIR="$(pwd)"
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+
+USER_NAME="tine2k"
+USER_ID="$(id -u "$USER_NAME")"
+GROUP_ID="$(id -g "$USER_NAME")"
+
+DOCKER_ARGS=(
+    --rm
+    -it
+
+    # Run as tine2k
+    --user "${USER_ID}:${GROUP_ID}"
+
+    # Project
+    -v "${PROJECT_DIR}:/${PROJECT_NAME}"
+    -w "/${PROJECT_NAME}"
+
+    -v "${HOME}/.config/docker-opencode:/home/${USER_NAME}"
+
+    # Environment
+    -e "HOME=/home/${USER_NAME}"
+    -e "USER=${USER_NAME}"
+    -e "LOGNAME=${USER_NAME}"
+    -e "TERM=${TERM:-xterm-256color}"
+    -e "COLORTERM=${COLORTERM:-truecolor}"
+
+    # Herdr
+    -e HERDR_BIN_PATH="/home/tine2k/.local/bin/herdr"
+    -e HERDR_PANE_ID
+    -e HERDR_TAB_ID
+    -e HERDR_WORKSPACE_ID
+    -e HERDR_ENV
+)
+
+# ---------------------------------------------------------------------------
+# Herdr Socket
+# ---------------------------------------------------------------------------
+
+HERDR_SOCKET="${HOME}/.config/herdr/herdr.sock"
+
+if [[ -S "$HERDR_SOCKET" ]]; then
+    DOCKER_ARGS+=(
+        -v "${HERDR_SOCKET}:/run/herdr.sock"
+        -e "HERDR_SOCKET_PATH=/run/herdr.sock"
+    )
+else
+    echo "WARNING: Herdr socket not found:"
+    echo "         $HERDR_SOCKET"
+fi
+
+# ---------------------------------------------------------------------------
+# Run OpenCode
+# ---------------------------------------------------------------------------
+
+HERDR_AGENT=opencode docker run \
+    "${DOCKER_ARGS[@]}" \
+    "$IMAGE" \
+    "$@"
