@@ -7,7 +7,7 @@ RUN set -eux; \
     if command -v apk >/dev/null 2>&1; then \
         apk add --no-cache \
             bash curl git openssh-client python3 py3-pip \
-            postgresql-client \
+            postgresql postgresql-client \
             nodejs npm \
             jq yq fd fzf \
             make build-base clang \
@@ -24,7 +24,7 @@ RUN set -eux; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
             bash curl git openssh-client python3 python3-pip \
-            postgresql-client \
+            postgresql postgresql-client \
             nodejs \
             jq yq fd-find fzf \
             make gcc g++ clang \
@@ -33,7 +33,7 @@ RUN set -eux; \
     elif command -v dnf >/dev/null 2>&1; then \
         dnf install -y \
             bash curl git openssh-clients python3 python3-pip \
-            postgresql \
+            postgresql postgresql-server \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
@@ -42,7 +42,7 @@ RUN set -eux; \
     elif command -v microdnf >/dev/null 2>&1; then \
         microdnf install -y \
             bash curl git openssh-clients python3 python3-pip \
-            postgresql \
+            postgresql postgresql-server \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
@@ -51,7 +51,7 @@ RUN set -eux; \
     elif command -v yum >/dev/null 2>&1; then \
         yum install -y \
             bash curl git openssh-clients python3 python3-pip \
-            postgresql \
+            postgresql postgresql-server \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
