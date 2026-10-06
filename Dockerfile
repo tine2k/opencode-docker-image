@@ -11,7 +11,7 @@ RUN set -eux; \
             nodejs npm \
             jq yq fd fzf \
             make build-base clang \
-            docker-cli podman; \
+            docker-cli podman chromium; \
     elif command -v apt-get >/dev/null 2>&1; then \
         apt-get update; \
         apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
@@ -68,3 +68,4 @@ RUN set -eux; \
 RUN curl -fsSL https://herdr.dev/install.sh | sh
 
 RUN npm install -g @fission-ai/openspec@latest
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
