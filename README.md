@@ -10,7 +10,7 @@ From this directory, build the image expected by the launcher:
 docker build -t opencode-docker .
 ```
 
-The image is based on `ghcr.io/anomalyco/opencode:1.18.33` and installs Git, Python, PostgreSQL client tools, Node.js/npm, `jq`, `yq`, `fd`, `fzf`, build tools, Docker CLI, Podman, Herdr, and OpenSpec.
+The image is based on `ghcr.io/anomalyco/opencode:1.18.34` and installs Git, Python, PostgreSQL server and client tools, Node.js/npm, `jq`, `yq`, `fd`, `fzf`, build tools, Docker CLI, Podman, Herdr, and OpenSpec.
 
 ## Run OpenCode
 
@@ -26,7 +26,7 @@ The launcher starts an interactive, temporary container, mounts the current dire
 /path/to/opencode-docker/opencode-docker --help
 ```
 
-The container runs using the host account named `tine2k`'s numeric UID and GID, so files created in the mounted project are owned by that account. Its home directory is backed by `~/.config/docker-opencode` on the host, where OpenCode configuration and state can persist between runs.
+The image creates the `tine2k` account with UID `501` and GID `20`, so OpenCode and tools such as PostgreSQL `initdb` can resolve the user while files created in the mounted project use those numeric ownership values. The container's home directory is backed by `~/.config/docker-opencode` on the host, where OpenCode configuration and state can persist between runs.
 
 If `~/.ssh` exists on the host, the launcher mounts it read-only at `/home/tine2k/.ssh` so Git can use your SSH keys and `known_hosts` for GitHub pushes. When `SSH_AUTH_SOCK` points to an available host agent socket, the launcher forwards that socket as well, allowing use of keys loaded in the agent. If the SSH directory is missing, the launcher prints a warning; add your GitHub-authorized key to the host's `~/.ssh` and run the launcher again.
 
@@ -37,5 +37,4 @@ If `~/.config/herdr/herdr.sock` exists on the host, the launcher mounts it into 
 ## Requirements
 
 - Docker on the host
-- A host account named `tine2k`
 - The `opencode-docker` image built locally as shown above

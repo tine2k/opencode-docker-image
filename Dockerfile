@@ -1,6 +1,6 @@
-FROM ghcr.io/anomalyco/opencode:1.18.33
+FROM ghcr.io/anomalyco/opencode:1.18.34
 
-# Package installation needs root; the launcher supplies the host UID/GID at runtime.
+# Package installation needs root.
 USER root
 
 RUN set -eux; \
@@ -8,6 +8,7 @@ RUN set -eux; \
         apk add --no-cache \
             bash curl git openssh-client python3 py3-pip \
             postgresql postgresql-client \
+            setpriv \
             nodejs npm \
             jq yq fd fzf \
             make build-base clang \
@@ -25,6 +26,7 @@ RUN set -eux; \
         apt-get install -y --no-install-recommends \
             bash curl git openssh-client python3 python3-pip \
             postgresql postgresql-client \
+            util-linux \
             nodejs \
             jq yq fd-find fzf \
             make gcc g++ clang \
@@ -34,6 +36,7 @@ RUN set -eux; \
         dnf install -y \
             bash curl git openssh-clients python3 python3-pip \
             postgresql postgresql-server \
+            util-linux \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
@@ -43,6 +46,7 @@ RUN set -eux; \
         microdnf install -y \
             bash curl git openssh-clients python3 python3-pip \
             postgresql postgresql-server \
+            util-linux \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
@@ -52,6 +56,7 @@ RUN set -eux; \
         yum install -y \
             bash curl git openssh-clients python3 python3-pip \
             postgresql postgresql-server \
+            util-linux \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
@@ -68,4 +73,32 @@ RUN set -eux; \
 RUN curl -fsSL https://herdr.dev/install.sh | sh
 
 RUN npm install -g @fission-ai/openspec@latest
+
+RUN set -eux; \
+    if ! awk -F: '$3 == 20 { found = 1 } END { exit !found }' /etc/group; then \
+        if awk -F: '$1 == "opencode-gid20" { found = 1 } END { exit !found }' /etc/group; then \
+            echo 'Group name opencode-gid20 is already in use' >&2; \
+            exit 1; \
+        fi; \
+        printf 'opencode-gid20:x:20:\n' >> /etc/group; \
+    fi; \
+    if awk -F: '$3 == 501 { found = 1 } END { exit !found }' /etc/passwd; then \
+        if ! awk -F: '$1 == "tine2k" && $3 == 501 && $4 == 20 { found = 1 } END { exit !found }' /etc/passwd; then \
+            echo 'UID 501 is already assigned to a different account' >&2; \
+            exit 1; \
+        fi; \
+    else \
+        if awk -F: '$1 == "tine2k" { found = 1 } END { exit !found }' /etc/passwd; then \
+            echo 'Account name tine2k is already in use' >&2; \
+            exit 1; \
+        fi; \
+        printf 'tine2k:x:501:20:OpenCode:/home/tine2k:/bin/sh\n' >> /etc/passwd; \
+    fi; \
+    mkdir -p /home/tine2k; \
+    chown 501:20 /home/tine2k
+
+USER 501:20
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# Auto-approve tool permissions that are not explicitly denied.
+CMD ["--auto"]

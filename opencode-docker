@@ -7,15 +7,12 @@ PROJECT_DIR="$(pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 
 USER_NAME="tine2k"
-USER_ID="$(id -u "$USER_NAME")"
-GROUP_ID="$(id -g "$USER_NAME")"
 
 DOCKER_ARGS=(
     --rm
     -it
 
-    # Run as tine2k
-    --user "${USER_ID}:${GROUP_ID}"
+    --user 501:20
 
     # Project
     -v "${PROJECT_DIR}:/${PROJECT_NAME}"
