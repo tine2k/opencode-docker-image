@@ -2,23 +2,234 @@
 set -euo pipefail
 
 IMAGE=opencode-docker
+BASE_REPOSITORY=anomalyco/opencode
+VERSION_LABEL=org.opencode-docker.base.version
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_DIR="$(pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
+CONTAINER_NAME="opencode-${PROJECT_NAME}"
 
 USER_NAME="tine2k"
 
+# ---------------------------------------------------------------------------
+# OpenCode version helpers
+# ---------------------------------------------------------------------------
+
+# Print the newest stable OpenCode version published to GHCR, or fail.
+latest_opencode_version() {
+    local token url page hdr body next tags
+
+    token="$(curl -fsSL --max-time 15 \
+        "https://ghcr.io/token?scope=repository:${BASE_REPOSITORY}:pull&service=ghcr.io" \
+        2>/dev/null | sed -nE 's/.*"token":"([^"]+)".*/\1/p')" || return 1
+    [ -n "$token" ] || return 1
+
+    url="https://ghcr.io/v2/${BASE_REPOSITORY}/tags/list?n=1000"
+    page=0
+    tags=""
+    while [ -n "$url" ] && [ "$page" -lt 20 ]; do
+        page=$((page + 1))
+        hdr="$(mktemp)" || return 1
+        body="$(mktemp)" || return 1
+        if ! curl -fsSL --max-time 30 -D "$hdr" -o "$body" \
+                -H "Authorization: Bearer ${token}" "$url" 2>/dev/null; then
+            rm -f "$hdr" "$body"
+            return 1
+        fi
+        tags="${tags}$(grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' "$body" | tr -d '"')"$'\n'
+        next="$(grep -i '^link:' "$hdr" | sed -nE 's/.*<([^>]+)>.*/\1/p' | tr -d '\r')"
+        rm -f "$hdr" "$body"
+        if [ -n "$next" ]; then
+            url="https://ghcr.io${next}"
+        else
+            url=""
+        fi
+    done
+
+    printf '%s' "$tags" \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -u \
+        | sort -t. -k1,1n -k2,2n -k3,3n \
+        | tail -n 1
+}
+
+# Print the OpenCode version the local image was built from, or fail.
+local_opencode_version() {
+    local version
+    version="$(docker image inspect \
+        --format "{{ index .Config.Labels \"${VERSION_LABEL}\" }}" \
+        "$IMAGE" 2>/dev/null)" || return 1
+    case "$version" in
+        "" | "<no value>") return 1 ;;
+    esac
+    printf '%s' "$version"
+}
+
+# Return success when version $1 is strictly newer than version $2.
+version_is_newer() {
+    local newer="$1" older="$2"
+    [ -n "$newer" ] || return 1
+    [ "$newer" = "$older" ] && return 1
+    [ "$(printf '%s\n%s\n' "$newer" "$older" \
+        | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" = "$newer" ]
+}
+
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+
+if (( $# > 0 )); then
+    echo "ERROR: this launcher does not take arguments." >&2
+    echo "       The host port is assigned per project on first run." >&2
+    exit 1
+fi
+
+CONTAINER_PORT=49374
+
+# ---------------------------------------------------------------------------
+# Paths: isolated per-project state, shared configuration, port registry
+# ---------------------------------------------------------------------------
+
+BASE_DIR="${HOME}/.config/docker-opencode"
+
+# Per-project key: the project directory name.
+PROJECT_KEY="${PROJECT_NAME}"
+
+# Shared across every container.
+SHARED_CONFIG="${BASE_DIR}/config"
+# Private to this project: sessions, logs, cache, service state, credentials DB.
+STATE_HOME="${BASE_DIR}/projects/${PROJECT_KEY}"
+# Registry of host ports already assigned to projects.
+PORTS_DIR="${BASE_DIR}/ports"
+PORT_FILE="${PORTS_DIR}/${PROJECT_KEY}"
+# Optional per-project environment, read by this launcher only.
+PROJECT_ENV_FILE="${BASE_DIR}/env/${PROJECT_KEY}"
+
+# ---------------------------------------------------------------------------
+# Host port: assigned once per project, then reused
+# ---------------------------------------------------------------------------
+
+valid_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && (( $1 >= 1 && $1 <= 65535 ))
+}
+
+# Print the project already using port $1, or fail.
+port_owner() {
+    local file other
+    for file in "${PORTS_DIR}"/*; do
+        [ -f "$file" ] || continue
+        other="$(basename "$file")"
+        [ "$other" = "$PROJECT_KEY" ] && continue
+        if [ "$(cat "$file")" = "$1" ]; then
+            printf '%s' "$other"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ -f "${PORT_FILE}" ]; then
+    PORT="$(cat "${PORT_FILE}")"
+    if ! valid_port "${PORT}"; then
+        echo "ERROR: ${PORT_FILE} does not contain a valid port (1-65535): ${PORT}" >&2
+        echo "       Fix or delete the file to choose a new port." >&2
+        exit 1
+    fi
+    echo "Using port ${PORT} for ${PROJECT_NAME}."
+else
+    while true; do
+        if ! read -r -p "Host port for ${PROJECT_NAME}: " PORT; then
+            echo >&2
+            echo "ERROR: no port is assigned to ${PROJECT_NAME} yet." >&2
+            echo "       Run the launcher interactively, or create ${PORT_FILE} with the port." >&2
+            exit 1
+        fi
+        if ! valid_port "${PORT}"; then
+            echo "Please enter a port between 1 and 65535." >&2
+            continue
+        fi
+        if owner="$(port_owner "${PORT}")"; then
+            echo "Port ${PORT} is already assigned to ${owner}. Choose another." >&2
+            continue
+        fi
+        break
+    done
+    mkdir -p "${PORTS_DIR}"
+    printf '%s\n' "${PORT}" > "${PORT_FILE}"
+    echo "Assigned port ${PORT} to ${PROJECT_NAME} (saved in ${PORT_FILE})."
+fi
+
+# ---------------------------------------------------------------------------
+# Update check: rebuild the image when a newer OpenCode version is published
+# ---------------------------------------------------------------------------
+
+LATEST_VERSION=""
+
+if [ -z "${OPENCODE_DOCKER_NO_UPDATE:-}" ]; then
+    echo "Checking for a newer OpenCode version..."
+    if LATEST_VERSION="$(latest_opencode_version)" && [ -n "$LATEST_VERSION" ]; then
+        echo "  latest published: ${LATEST_VERSION}"
+    else
+        LATEST_VERSION=""
+        echo "WARNING: could not determine the latest OpenCode version; skipping update check." >&2
+    fi
+fi
+
+IMAGE_VERSION="$(local_opencode_version || true)"
+
+REBUILD=0
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    REBUILD=1
+    echo "  image ${IMAGE} not found; building it."
+elif [ -n "$LATEST_VERSION" ] && version_is_newer "$LATEST_VERSION" "${IMAGE_VERSION:-}"; then
+    REBUILD=1
+    echo "  ${IMAGE} is at ${IMAGE_VERSION:-unknown}; newer ${LATEST_VERSION} available."
+elif [ -n "$LATEST_VERSION" ]; then
+    echo "  ${IMAGE} is up to date (${IMAGE_VERSION:-$LATEST_VERSION})."
+fi
+
+if [ "$REBUILD" -eq 1 ]; then
+    if [ -n "$LATEST_VERSION" ]; then
+        echo "Rebuilding ${IMAGE} with OpenCode ${LATEST_VERSION}..."
+        docker build --pull --build-arg "OPENCODE_VERSION=${LATEST_VERSION}" -t "$IMAGE" "$SCRIPT_DIR"
+    else
+        echo "Rebuilding ${IMAGE}..."
+        docker build --pull -t "$IMAGE" "$SCRIPT_DIR"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Migrate the previous layout
+# ---------------------------------------------------------------------------
+
+# The previous layout mounted BASE_DIR as the whole home directory. Move the
+# existing configuration into the shared config directory so it is not lost.
+if [ ! -e "${SHARED_CONFIG}" ] && [ -d "${BASE_DIR}/.config/opencode" ]; then
+    mv "${BASE_DIR}/.config/opencode" "${SHARED_CONFIG}"
+    echo "Migrated existing OpenCode configuration to ${SHARED_CONFIG}"
+fi
+
+mkdir -p "${SHARED_CONFIG}" "${STATE_HOME}/.config/opencode"
+
 DOCKER_ARGS=(
     --rm
-    -it
+    -d
 
     --user 501:20
+
+    --name "${CONTAINER_NAME}"
 
     # Project
     -v "${PROJECT_DIR}:/${PROJECT_NAME}"
     -w "/${PROJECT_NAME}"
 
-    -v "${HOME}/.config/docker-opencode:/home/${USER_NAME}"
+    # Private, per-project home: sessions, cache, logs, service state, DB.
+    -v "${STATE_HOME}:/home/${USER_NAME}"
+
+    # Shared OpenCode configuration (opencode.json, cli.json, agents, ...).
+    -v "${SHARED_CONFIG}:/home/${USER_NAME}/.config/opencode"
 
     # Environment
     -e "HOME=/home/${USER_NAME}"
@@ -33,7 +244,58 @@ DOCKER_ARGS=(
     -e HERDR_TAB_ID
     -e HERDR_WORKSPACE_ID
     -e HERDR_ENV
+
+    -e "OPENCODE_PASSWORD=a"
+
+    -p "0.0.0.0:${PORT}:${CONTAINER_PORT}"
 )
+
+# ---------------------------------------------------------------------------
+# Provider credentials
+# ---------------------------------------------------------------------------
+
+# Forward provider API keys from the host environment so they do not have to be
+# stored in (and duplicated across) each container's database.
+while IFS='=' read -r name _; do
+    case "$name" in
+        *_API_KEY) DOCKER_ARGS+=(-e "$name") ;;
+    esac
+done < <(env)
+
+# Forward any additional variable names listed in OPENCODE_DOCKER_ENV.
+if [ -n "${OPENCODE_DOCKER_ENV:-}" ]; then
+    read -r -a extra_env <<< "${OPENCODE_DOCKER_ENV}"
+    for name in "${extra_env[@]}"; do
+        if printenv "$name" >/dev/null 2>&1; then
+            DOCKER_ARGS+=(-e "$name")
+        else
+            echo "WARNING: OPENCODE_DOCKER_ENV names ${name}, but it is not set on the host." >&2
+        fi
+    done
+fi
+
+# ---------------------------------------------------------------------------
+# Per-project environment
+# ---------------------------------------------------------------------------
+
+# Apply variables that should only exist for this project's container. Lines
+# are NAME=VALUE; blank lines and lines starting with # are ignored. The file
+# is not mounted into the container.
+if [ -f "${PROJECT_ENV_FILE}" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        case "$line" in
+            "" | \#*) continue ;;
+        esac
+        if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            echo "ERROR: ${PROJECT_ENV_FILE} contains a line that is not NAME=VALUE:" >&2
+            echo "       ${line}" >&2
+            exit 1
+        fi
+        DOCKER_ARGS+=(-e "$line")
+    done < "${PROJECT_ENV_FILE}"
+fi
 
 # ---------------------------------------------------------------------------
 # SSH credentials
@@ -74,10 +336,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Run OpenCode
+# Run OpenCode in the background
 # ---------------------------------------------------------------------------
 
-HERDR_AGENT=opencode docker run \
-    "${DOCKER_ARGS[@]}" \
-    "$IMAGE" \
-    "$@"
+# Replace any container already using this project's name so the new one can
+# start cleanly.
+if docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
+    echo "Stopping existing container ${CONTAINER_NAME}..."
+    docker stop "${CONTAINER_NAME}" >/dev/null
+    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+fi
+
+echo "Starting OpenCode in the background on port ${PORT}..."
+CONTAINER_ID="$(docker run "${DOCKER_ARGS[@]}" "$IMAGE" serve --hostname 0.0.0.0 --port "${CONTAINER_PORT}")"
+
+echo "OpenCode is running in the background."
+echo "  container: ${CONTAINER_NAME} (${CONTAINER_ID:0:12})"
+echo "  url:       http://localhost:${PORT}"
+echo "  state:     ${STATE_HOME}"
+echo "  config:    ${SHARED_CONFIG}"
+echo "  logs:      docker logs -f ${CONTAINER_NAME}"
+echo "  stop:      docker stop ${CONTAINER_NAME}"

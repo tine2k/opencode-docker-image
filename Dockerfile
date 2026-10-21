@@ -1,4 +1,9 @@
-FROM ghcr.io/anomalyco/opencode:1.18.34
+ARG OPENCODE_VERSION=2.1.2
+FROM ghcr.io/anomalyco/opencode:${OPENCODE_VERSION}
+
+# Record the base OpenCode version so the launcher can detect updates.
+ARG OPENCODE_VERSION
+LABEL org.opencode-docker.base.version="${OPENCODE_VERSION}"
 
 # Package installation needs root.
 USER root
@@ -12,6 +17,7 @@ RUN set -eux; \
             nodejs npm \
             jq yq fd fzf \
             make build-base clang \
+            openjdk25 maven \
             docker-cli podman chromium; \
     elif command -v apt-get >/dev/null 2>&1; then \
         apt-get update; \
@@ -30,6 +36,7 @@ RUN set -eux; \
             nodejs \
             jq yq fd-find fzf \
             make gcc g++ clang \
+            openjdk-25-jdk maven \
             docker.io podman; \
         rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
@@ -40,6 +47,7 @@ RUN set -eux; \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
+            java-25-openjdk-devel maven \
             moby-engine podman; \
         dnf clean all; \
     elif command -v microdnf >/dev/null 2>&1; then \
@@ -50,6 +58,7 @@ RUN set -eux; \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
+            java-25-openjdk-devel maven \
             moby-engine podman; \
         microdnf clean all; \
     elif command -v yum >/dev/null 2>&1; then \
@@ -60,6 +69,7 @@ RUN set -eux; \
             nodejs npm \
             jq yq fd-find fzf \
             make gcc gcc-c++ clang \
+            java-25-openjdk-devel maven \
             moby-engine podman; \
         yum clean all; \
     else \
