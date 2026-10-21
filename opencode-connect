@@ -151,24 +151,6 @@ if [ -n "$WORKDIR" ]; then
     EXEC_ARGS+=(-w "$WORKDIR")
 fi
 
-# Update Herdr's per-pane variables from the current terminal. The socket is
-# already mounted in the server container by the launcher.
-for name in HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_ENV; do
-    if [ -n "${!name:-}" ]; then
-        EXEC_ARGS+=(-e "$name")
-    fi
-done
-
-HERDR_SOCKET="${HOME}/.config/herdr/herdr.sock"
-HERDR_MOUNTED="$(docker container inspect --format \
-    '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' \
-    "$CONTAINER_NAME" 2>/dev/null | grep -Fx /run/herdr.sock || true)"
-
-if [[ -S "$HERDR_SOCKET" ]] && [ -z "$HERDR_MOUNTED" ]; then
-    echo "WARNING: Herdr socket is not mounted in ${CONTAINER_NAME}." >&2
-    echo "         Restart the project to enable Herdr integration." >&2
-fi
-
 echo "Connecting to ${PROJECT_NAME} in ${CONTAINER_NAME}..."
 echo
 

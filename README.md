@@ -10,7 +10,7 @@ From this directory, build the image expected by the launcher:
 docker build -t opencode-docker .
 ```
 
-The image is based on `ghcr.io/anomalyco/opencode`, with the version selected by the `OPENCODE_VERSION` build arg (default `2.1.2`), and installs Git, Python, PostgreSQL server and client tools, Node.js/npm, JDK 25, Maven, `jq`, `yq`, `fd`, `fzf`, build tools, Docker CLI, Podman, Herdr, and OpenSpec.
+The image is based on `ghcr.io/anomalyco/opencode`, with the version selected by the `OPENCODE_VERSION` build arg (default `2.1.2`), and installs Git, Python, PostgreSQL server and client tools, Node.js/npm, JDK 25, Maven, `jq`, `yq`, `fd`, `fzf`, build tools, Docker CLI, Podman, and OpenSpec.
 
 You normally do not need to build the image by hand: the launcher builds it automatically, and rebuilds it when a newer OpenCode version is published (see [Automatic updates](#automatic-updates)).
 
@@ -57,7 +57,7 @@ The client authenticates with the password the server container was started with
 OPENCODE_CONNECT_PASSWORD=secret /path/to/opencode-docker/opencode-connect <project>
 ```
 
-If the container is missing or stopped, or the server does not respond, the script prints the command to start the project and how to inspect its logs. If the container was started before the Herdr socket was available, restart the project to mount it.
+If the container is missing or stopped, or the server does not respond, the script prints the command to start the project and how to inspect its logs.
 
 ## Automatic updates
 
@@ -112,10 +112,6 @@ EOF
 ```
 
 The file is read when the launcher starts the container and is not mounted into it. Variables defined there are applied after the host `*_API_KEY` and `OPENCODE_DOCKER_ENV` forwarding, so they override a forwarded value with the same name. Restart the project's container for changes to take effect.
-
-## Herdr integration
-
-If `~/.config/herdr/herdr.sock` exists on the host, the launcher mounts it into the container at `/run/herdr.sock` and sets `HERDR_SOCKET_PATH`. It also passes through the Herdr pane, tab, workspace, and environment variables when present. If the socket is missing, the launcher prints a warning and continues without the socket integration.
 
 ## Requirements
 

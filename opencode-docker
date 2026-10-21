@@ -238,13 +238,6 @@ DOCKER_ARGS=(
     -e "TERM=${TERM:-xterm-256color}"
     -e "COLORTERM=${COLORTERM:-truecolor}"
 
-    # Herdr
-    -e HERDR_BIN_PATH="/home/tine2k/.local/bin/herdr"
-    -e HERDR_PANE_ID
-    -e HERDR_TAB_ID
-    -e HERDR_WORKSPACE_ID
-    -e HERDR_ENV
-
     -e "OPENCODE_PASSWORD=a"
 
     -p "0.0.0.0:${PORT}:${CONTAINER_PORT}"
@@ -317,22 +310,6 @@ if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
         -v "${SSH_AUTH_SOCK}:/run/host-ssh-agent"
         -e "SSH_AUTH_SOCK=/run/host-ssh-agent"
     )
-fi
-
-# ---------------------------------------------------------------------------
-# Herdr Socket
-# ---------------------------------------------------------------------------
-
-HERDR_SOCKET="${HOME}/.config/herdr/herdr.sock"
-
-if [[ -S "$HERDR_SOCKET" ]]; then
-    DOCKER_ARGS+=(
-        -v "${HERDR_SOCKET}:/run/herdr.sock"
-        -e "HERDR_SOCKET_PATH=/run/herdr.sock"
-    )
-else
-    echo "WARNING: Herdr socket not found:"
-    echo "         $HERDR_SOCKET"
 fi
 
 # ---------------------------------------------------------------------------

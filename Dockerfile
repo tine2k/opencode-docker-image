@@ -80,8 +80,6 @@ RUN set -eux; \
         ln -s "$(command -v fdfind)" /usr/local/bin/fd; \
     fi
 
-RUN curl -fsSL https://herdr.dev/install.sh | sh
-
 RUN npm install -g @fission-ai/openspec@latest
 
 RUN set -eux; \
