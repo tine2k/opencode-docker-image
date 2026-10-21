@@ -214,7 +214,10 @@ fi
 mkdir -p "${SHARED_CONFIG}" "${STATE_HOME}/.config/opencode"
 
 DOCKER_ARGS=(
-    --rm
+    # Survive a daemon restart or host reboot. A container stopped explicitly
+    # with "docker stop" stays stopped. --rm cannot be combined with a restart
+    # policy, so stopped containers are removed by the next launch instead.
+    --restart unless-stopped
     -d
 
     --user 501:20

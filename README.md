@@ -26,7 +26,7 @@ The launcher does not take arguments. The first time you run it for a project, i
 
 The launcher refuses to assign a port that is already assigned to another project. To change a project's port, edit or delete `~/.config/docker-opencode/ports/<project>` and run the launcher again.
 
-The launcher starts a detached, temporary container in the background, mounts the current directory as the working directory, and runs OpenCode in server mode on the given port. It prints the container name, URL, and the commands to follow the logs or stop it:
+The launcher starts a detached container in the background, mounts the current directory as the working directory, and runs OpenCode in server mode on the given port. It prints the container name, URL, and the commands to follow the logs or stop it:
 
 ```sh
 docker logs -f opencode-<project>
@@ -34,6 +34,10 @@ docker stop opencode-<project>
 ```
 
 The container is named `opencode-<project>`, where `<project>` is the project directory name. If a container with that name is already running, the launcher stops and removes it before starting the new one.
+
+### Restart behavior
+
+The container uses the `unless-stopped` restart policy, so it comes back automatically after a Docker daemon restart or host reboot. A container stopped explicitly with `docker stop` stays stopped until you run the launcher again. Because a restart policy cannot be combined with `--rm`, stopped containers are not removed automatically; the next launch removes the old container for that project.
 
 ## Connect to a running project
 
