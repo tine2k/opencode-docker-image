@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTAINER_PORT=49374
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <project>
+
+Open the OpenCode terminal client for a project started with opencode-docker.
+
+The client runs inside the existing server container (docker exec), so it uses
+the same project files, home directory, configuration, and network. No extra
+container is started.
+
+Environment:
+  OPENCODE_CONNECT_PASSWORD  Server password (default: read from the container)
+
+Example:
+  $(basename "$0") my-app
+EOF
+}
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    -*)
+        echo "ERROR: unknown option: $1" >&2
+        echo >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
+if (( $# != 1 )); then
+    usage >&2
+    exit 2
+fi
+
+PROJECT_NAME="$1"
+
+if [[ ! "$PROJECT_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    die "invalid project name: ${PROJECT_NAME}
+       Use the project directory name (letters, digits, '.', '_', '-').
+       It must match the name used when the project was started."
+fi
+
+CONTAINER_NAME="opencode-${PROJECT_NAME}"
+
+command -v docker >/dev/null 2>&1 || die "docker is not installed or not on PATH."
+
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    die "this command needs an interactive terminal (stdin and stdout must be a TTY)."
+fi
+
+# ---------------------------------------------------------------------------
+# Server container
+# ---------------------------------------------------------------------------
+
+CONTAINER_STATE="$(docker container inspect --format '{{.State.Status}}' \
+    "$CONTAINER_NAME" 2>/dev/null)" || die "container ${CONTAINER_NAME} does not exist.
+       Start the project first with ${SCRIPT_DIR}/opencode-docker."
+
+if [ "$CONTAINER_STATE" != "running" ]; then
+    die "container ${CONTAINER_NAME} is not running (state: ${CONTAINER_STATE}).
+       Start it with ${SCRIPT_DIR}/opencode-docker.
+       Logs: docker logs ${CONTAINER_NAME}"
+fi
+
+# Reuse the password the server container was started with, unless the caller
+# overrides it. The launcher sets OPENCODE_PASSWORD; OPENCODE_SERVER_PASSWORD is
+# the legacy name.
+PASSWORD="${OPENCODE_CONNECT_PASSWORD:-}"
+if [ -z "$PASSWORD" ]; then
+    CONTAINER_ENV="$(docker container inspect --format \
+        '{{range .Config.Env}}{{.}}{{println}}{{end}}' \
+        "$CONTAINER_NAME" 2>/dev/null || true)"
+    LEGACY_PASSWORD=""
+    while IFS= read -r entry; do
+        case "$entry" in
+            OPENCODE_PASSWORD=*) PASSWORD="${entry#OPENCODE_PASSWORD=}" ;;
+            OPENCODE_SERVER_PASSWORD=*) LEGACY_PASSWORD="${entry#OPENCODE_SERVER_PASSWORD=}" ;;
+        esac
+    done <<< "$CONTAINER_ENV"
+    PASSWORD="${PASSWORD:-$LEGACY_PASSWORD}"
+fi
+PASSWORD="${PASSWORD:-a}"
+
+# ---------------------------------------------------------------------------
+# Server health
+# ---------------------------------------------------------------------------
+
+# Check from inside the container: the fixed container port is all that is
+# needed, so the host port mapping is irrelevant here.
+HEALTH_URL="http://127.0.0.1:${CONTAINER_PORT}/api/info"
+
+HTTP_CODE="$(docker exec "$CONTAINER_NAME" \
+    curl -sS --max-time 5 \
+    -u "opencode:${PASSWORD}" \
+    -o /dev/null -w '%{http_code}' \
+    "$HEALTH_URL" 2>/dev/null || true)"
+
+case "$HTTP_CODE" in
+    200)
+        ;;
+    401)
+        die "the server for ${PROJECT_NAME} is running, but authentication failed.
+       Set OPENCODE_CONNECT_PASSWORD to the server password and try again."
+        ;;
+    000 | "")
+        die "container ${CONTAINER_NAME} is running, but its server is not reachable at ${HEALTH_URL}.
+       Check the logs: docker logs ${CONTAINER_NAME}"
+        ;;
+    *)
+        die "unexpected response from ${HEALTH_URL} (HTTP ${HTTP_CODE}).
+       Check the logs: docker logs ${CONTAINER_NAME}"
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Interactive client inside the server container
+# ---------------------------------------------------------------------------
+
+# The container's working directory is the project directory. Use it
+# explicitly so the client starts in the same place as the server.
+WORKDIR="$(docker container inspect --format '{{.Config.WorkingDir}}' \
+    "$CONTAINER_NAME" 2>/dev/null || true)"
+
+EXEC_ARGS=(
+    -it
+
+    -e "TERM=${TERM:-xterm-256color}"
+    -e "COLORTERM=${COLORTERM:-truecolor}"
+
+    # Client authentication. V2 reads OPENCODE_PASSWORD; the legacy name is
+    # kept for compatibility.
+    -e "OPENCODE_PASSWORD=${PASSWORD}"
+    -e "OPENCODE_SERVER_PASSWORD=${PASSWORD}"
+)
+
+if [ -n "$WORKDIR" ]; then
+    EXEC_ARGS+=(-w "$WORKDIR")
+fi
+
+# Update Herdr's per-pane variables from the current terminal. The socket is
+# already mounted in the server container by the launcher.
+for name in HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_ENV; do
+    if [ -n "${!name:-}" ]; then
+        EXEC_ARGS+=(-e "$name")
+    fi
+done
+
+HERDR_SOCKET="${HOME}/.config/herdr/herdr.sock"
+HERDR_MOUNTED="$(docker container inspect --format \
+    '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' \
+    "$CONTAINER_NAME" 2>/dev/null | grep -Fx /run/herdr.sock || true)"
+
+if [[ -S "$HERDR_SOCKET" ]] && [ -z "$HERDR_MOUNTED" ]; then
+    echo "WARNING: Herdr socket is not mounted in ${CONTAINER_NAME}." >&2
+    echo "         Restart the project to enable Herdr integration." >&2
+fi
+
+echo "Connecting to ${PROJECT_NAME} in ${CONTAINER_NAME}..."
+echo
+
+exec docker exec "${EXEC_ARGS[@]}" "$CONTAINER_NAME" \
+    opencode --server "http://127.0.0.1:${CONTAINER_PORT}"

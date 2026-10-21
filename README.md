@@ -35,6 +35,30 @@ docker stop opencode-<project>
 
 The container is named `opencode-<project>`, where `<project>` is the project directory name. If a container with that name is already running, the launcher stops and removes it before starting the new one.
 
+## Connect to a running project
+
+Use `opencode-connect` to open the terminal interface for an already running project:
+
+```sh
+/path/to/opencode-docker/opencode-connect <project>
+```
+
+`<project>` is the same project directory name used by the launcher. The script checks that the `opencode-<project>` container is running and that its server answers, then opens the client inside that container with `docker exec`:
+
+```sh
+docker exec -it opencode-<project> opencode --server http://127.0.0.1:49374
+```
+
+No additional container is created. The client runs in the server container, so it automatically uses the same project mount, home directory, shared configuration, network, and credentials. The server listens on the fixed internal port `49374`, so the assigned host port is not needed and the project does not have to be the current directory.
+
+The client authenticates with the password the server container was started with. Override it with `OPENCODE_CONNECT_PASSWORD` if needed:
+
+```sh
+OPENCODE_CONNECT_PASSWORD=secret /path/to/opencode-docker/opencode-connect <project>
+```
+
+If the container is missing or stopped, or the server does not respond, the script prints the command to start the project and how to inspect its logs. If the container was started before the Herdr socket was available, restart the project to mount it.
+
 ## Automatic updates
 
 Each time the launcher runs, it queries the GitHub Container Registry for the newest published OpenCode version and compares it against the version the local `opencode-docker` image was built from (recorded in the `org.opencode-docker.base.version` image label). If the image is missing, or a newer version is available, the launcher pulls and rebuilds the image before starting OpenCode.
