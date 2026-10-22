@@ -220,7 +220,7 @@ DOCKER_ARGS=(
     --restart unless-stopped
     -d
 
-    --user 501:20
+    --user 501:0
 
     --name "${CONTAINER_NAME}"
 
@@ -294,26 +294,22 @@ if [ -f "${PROJECT_ENV_FILE}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# SSH credentials
+# SSH credentials with 1Password
 # ---------------------------------------------------------------------------
-
 SSH_DIR="${HOME}/.ssh"
 
 if [[ -d "$SSH_DIR" ]]; then
     DOCKER_ARGS+=(
-        -v "${SSH_DIR}:/home/${USER_NAME}/.ssh:ro"
+        -v "${SSH_DIR}/known_hosts:/home/${USER_NAME}/.ssh/known_hosts:ro"
     )
 else
     echo "WARNING: SSH directory not found: $SSH_DIR"
-    echo "         Add your GitHub SSH key there to enable SSH pushes."
 fi
 
-if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
-    DOCKER_ARGS+=(
-        -v "${SSH_AUTH_SOCK}:/run/host-ssh-agent"
-        -e "SSH_AUTH_SOCK=/run/host-ssh-agent"
-    )
-fi
+DOCKER_ARGS+=(
+    -v "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock:/run/host-services/ssh-auth.sock" \
+    -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock \
+)
 
 # ---------------------------------------------------------------------------
 # Run OpenCode in the background
